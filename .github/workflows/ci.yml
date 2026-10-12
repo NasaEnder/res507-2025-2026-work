@@ -73,3 +73,4 @@ jobs:
       - name: Stop container
         if: always()
         run: docker rm -f quote-app || true
+      const = ;
