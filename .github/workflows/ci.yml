@@ -40,7 +40,7 @@ jobs:
           for attempt in $(seq 1 30); do
             if curl --fail --silent --show-error \
               --connect-timeout 1 --max-time 2 \
-              http://localhost:3000/healthz -o /tmp/quote-app-health.json \
+              http://localhost:3000/health -o /tmp/quote-app-health.json \
               && node -e 'const assert = require("node:assert/strict"); const fs = require("node:fs"); assert.equal(JSON.parse(fs.readFileSync("/tmp/quote-app-health.json", "utf8")).ok, true);'; then
               echo "Health check passed"
               exit 0
