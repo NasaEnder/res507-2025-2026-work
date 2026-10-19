@@ -16,6 +16,12 @@ spec:
         - name: quote-app
           image: quote-app:local
           imagePullPolicy: IfNotPresent
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: quote-db-secret
+                  key: DATABASE_URL
           ports:
             - containerPort: 3000
           readinessProbe:
