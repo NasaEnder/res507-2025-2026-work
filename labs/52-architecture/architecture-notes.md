@@ -132,3 +132,47 @@ Traffic paths shown separately:
 - **Main limitation:** the database is a single PostgreSQL Pod on node-local storage. Database Pod replacement causes a short outage (`Recreate`), and there is no recovery from VM or disk loss.
 - **Next action:** add a scheduled logical backup (`pg_dump`) stored outside the VM, and test a restore into a fresh cluster. Multi-node storage and database replication are future work (Lab 62), not something this teaching cluster provides.
 - **Also untested:** `/health` still does not check the database (by design, so a database outage does not restart every app Pod through the liveness probe), and the app's behaviour while the database is briefly unavailable was not measured.
+
+## 7. Lab 60 – re-verification on a rebuilt VM
+
+The original VM was lost and replaced by the instructor-provided VM (k3s preinstalled). The cluster state was rebuilt from the repository only:
+
+- App image rebuilt and imported into k3s (Docker's image store is separate):
+  `docker build -f labs/20-containerized-node-app/docker/Dockerfile -t quote-app:local labs/20-containerized-node-app`
+  then `docker save quote-app:local | sudo k3s ctr images import -`
+- Secret `quote-db-secret` recreated with `kubectl create secret` (not committed).
+- Manifests re-applied unchanged: `db-init-configmap.yaml`, `database.yaml`, `../42-kubernetes/deployment.yaml`, `../42-kubernetes/service.yaml`.
+
+```
+$ kubectl get pvc quote-db-data
+quote-db-data   Bound    pvc-80312f79-5eaf-42c0-b091-626f0a580c5b   1Gi   RWO   local-path
+
+$ kubectl logs deployment/quote-db | grep -E "init.sql|CREATE TABLE|INSERT"
+running /docker-entrypoint-initdb.d/init.sql
+CREATE TABLE
+INSERT 0 3
+
+$ quote_marker="res509-$(date +%s)"      # res509-1794906259
+$ curl --fail --data-urlencode "author=RES509" --data-urlencode "text=$quote_marker" http://127.0.0.1:8080/quotes
+$ curl --fail -s http://127.0.0.1:8080/ | grep -F "$quote_marker"
+    <div>res509-1794906259</div>
+```
+
+The database Pod was then replaced twice with `kubectl rollout restart deployment/quote-db`:
+
+| | Database Pod | PVC |
+|---|---|---|
+| Initial | `quote-db-796c9c9d49-whz7m` | `quote-db-data` → `pvc-80312f79-…` (Bound) |
+| After 1st restart | `quote-db-5b84dc9cd-br5wb` | `quote-db-data` → `pvc-80312f79-…` (Bound) |
+| After 2nd restart | `quote-db-6fd64d4544-gt2gv` | `quote-db-data` → `pvc-80312f79-…` (Bound) |
+
+```
+$ curl --fail -s http://127.0.0.1:8080/ | grep -F "$quote_marker"
+    <div>res509-1794906259</div>
+
+$ kubectl logs deployment/quote-db | grep -E "Skipping|ready to accept"
+PostgreSQL Database directory appears to contain a database; Skipping initialization
+database system is ready to accept connections
+```
+
+**Observation.** Losing the VM confirmed the limitation in section 6: everything stored on the old VM (database contents, imported image, Secret) was gone. Only what was in Git survived, and it was enough to rebuild the whole setup, but the original quote data was not recoverable. A `pg_dump` backup stored outside the VM remains the next action.
